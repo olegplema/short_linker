@@ -1,0 +1,264 @@
+service: serverless-short-linker
+provider:
+  name: aws
+  runtime: nodejs18.x
+  region: eu-west-1
+  stage: dev
+  environment:
+    QUEUE_URL: { Ref: NotificationQueue }
+    REFRESH_TOKEN_SECRET: "REFRESH_TOKEN_SECRET"
+    ACCESS_TOKEN_SECRET: "ACCESS_TOKEN_SECRET"
+    REGION: "eu-west-1"
+    ACCESS_KEY_ID: !Ref AdminUserAccessKey
+    SECRET_ACCESS_KEY: !GetAtt AdminUserAccessKey.SecretAccessKey
+    EMAIL: "plema9400@gmail.com"
+#1
+functions:
+  checkLinkExpiration:
+    handler: dist/notifications/checkLinkExpiration.handler
+    role: NotificationProcessingFunctionRole
+    events:
+      - eventBridge:
+          enabled: true
+          schedule: rate(1 hour)
+
+  createLink:
+    handler: dist/links/createLink.handler
+    role: NotificationProcessingFunctionRole
+    events:
+      - http:
+          path: /links/create
+          method: post
+          cors: true
+          authorizer:
+            name: checkAuth
+            resultTtlInSeconds: 0
+            identitySource: method.request.header.Authorization
+            type: token
+
+
+  deactivateLink:
+    handler: dist/links/deactivateLink.handler
+    role: NotificationProcessingFunctionRole
+    events:
+      - http:
+          path: /links/deactivate
+          method: post
+          cors: true
+          authorizer:
+            name: checkAuth
+            resultTtlInSeconds: 0
+            identitySource: method.request.header.Authorization
+            type: token
+
+  listLinks:
+    handler: dist/links/getList.handler
+    role: NotificationProcessingFunctionRole
+    events:
+      - http:
+          path: /links/list
+          method: get
+          cors: true
+          authorizer:
+            name: checkAuth
+            resultTtlInSeconds: 0
+            identitySource: method.request.header.Authorization
+            type: token
+
+
+  processNotifications:
+    handler: dist/notifications/sendEmails.handler
+    role: NotificationProcessingFunctionRole
+    events:
+      - sqs:
+          arn:
+            Fn::GetAtt:
+              - NotificationQueue
+              - Arn
+          batchSize: 10
+
+  signUp:
+    handler: dist/auth/signUp.handler
+    role: NotificationProcessingFunctionRole
+    events:
+      - http:
+          path: /auth/sign-up
+          method: post
+          cors: true
+
+  signIn:
+    handler: dist/auth/signIn.handler
+    role: NotificationProcessingFunctionRole
+    events:
+      - http:
+          path: /auth/sign-in
+          method: post
+          cors: true
+
+  refresh:
+    handler: dist/auth/refresh.handler
+    role: NotificationProcessingFunctionRole
+    events:
+      - http:
+          path: /auth/refresh
+          method: post
+          cors: true
+
+  followLink:
+    handler: dist/links/followLink.handler
+    role: NotificationProcessingFunctionRole
+    events:
+      - http:
+          path: /{id}
+          method: get
+          cors: true
+
+  sendNotifications:
+      handler: dist/notifications/checkLinkExpiration.handler
+      role: NotificationProcessingFunctionRole
+      events:
+        - eventBridge:
+              schedule: rate(1 minute)
+        - sqs:
+            arn:
+              Fn::GetAtt:
+                - NotificationQueue
+                - Arn
+            batchSize: 10
+
+  checkAuth:
+    handler: dist/auth/authorizer.handler
+    role: NotificationProcessingFunctionRole
+
+resources:
+  Resources:
+    AdminUser:
+      Type: AWS::IAM::User
+      Properties:
+        UserName: adminUser
+
+    AdminUserAccessKey:
+      Type: AWS::IAM::AccessKey
+      Properties:
+        UserName: !Ref AdminUser
+
+    AdminUserPolicy:
+      Type: AWS::IAM::ManagedPolicy
+      Properties:
+        ManagedPolicyName: AdminAccessPolicy
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action: '*'
+              Resource: '*'
+        Users:
+          - !Ref AdminUser
+
+    NotificationProcessingFunctionRole:
+      Type: AWS::IAM::Role
+      Properties:
+        RoleName: NotificationProcessingFunctionRole
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service:
+                  - "lambda.amazonaws.com"
+              Action:
+                - "sts:AssumeRole"
+        Policies:
+          - PolicyName: AWSLambdaBasicExecutionRole
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: "Allow"
+                  Action:
+                    - "logs:CreateLogGroup"
+                    - "logs:CreateLogStream"
+                    - "logs:PutLogEvents"
+                  Resource: '*'
+          - PolicyName: AmazonSesFullAccessPolicy
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action: ses:*
+                  Resource: '*'
+
+    SQSPolicy:
+      Type: AWS::IAM::Policy
+      Properties:
+        PolicyName: SQSPolicy
+        Roles:
+          - Ref: NotificationProcessingFunctionRole
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - "sqs:SendMessage"
+                - "sqs:ReceiveMessage"
+                - "sqs:DeleteMessage"
+                - "sqs:GetQueueAttributes"
+              Resource:
+                - !GetAtt NotificationQueue.Arn
+
+    DynamoPolicy:
+      Type: AWS::IAM::Policy
+      Properties:
+        PolicyName: dynamoPolicy
+        Roles:
+          - Ref: NotificationProcessingFunctionRole
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - "dynamodb:GetItem"
+                - "dynamodb:PutItem"
+                - "dynamodb:UpdateItem"
+                - "dynamodb:Scan"
+              Resource:
+                - !GetAtt DynamoGlobalDBTableUsers.Arn
+                - !GetAtt DynamoGlobalDBTableLinks.Arn
+
+    NotificationQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: "NotificationQueue"
+
+    DynamoGlobalDBTableLinks:
+      Type: AWS::DynamoDB::GlobalTable
+      Properties:
+        TableName: "Links"
+        AttributeDefinitions:
+          - AttributeName: "id"
+            AttributeType: "S"
+        KeySchema:
+          - AttributeName: "id"
+            KeyType: "HASH"
+        BillingMode: "PAY_PER_REQUEST"
+        StreamSpecification:
+          StreamViewType: "NEW_AND_OLD_IMAGES"
+        Replicas:
+          - Region: !Ref AWS::Region
+      DeletionPolicy: Retain
+
+    DynamoGlobalDBTableUsers:
+      Type: AWS::DynamoDB::GlobalTable
+      Properties:
+        TableName: "Users"
+        AttributeDefinitions:
+          - AttributeName: "id"
+            AttributeType: "S"
+        KeySchema:
+          - AttributeName: "id"
+            KeyType: "HASH"
+        BillingMode: "PAY_PER_REQUEST"
+        StreamSpecification:
+          StreamViewType: "NEW_AND_OLD_IMAGES"
+        Replicas:
+          - Region: !Ref AWS::Region
+      DeletionPolicy: Retain

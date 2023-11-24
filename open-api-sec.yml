@@ -1,0 +1,184 @@
+openapi: 3.0.0
+info:
+  title: Short Linker API
+  version: 1.0.0
+
+paths:
+  /links/deactivate:
+    post:
+      summary: Deactivate link
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id:
+                  type: string
+      responses:
+        '200':
+          description: Link deactivated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /links/list:
+    get:
+      summary: Get a list of links
+      responses:
+        '200':
+          description: List of short links retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  links:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Link'
+    components:
+      schemas:
+        Link:
+          type: object
+          properties:
+            id:
+              type: string
+            link:
+              type: string
+            expiresIn:
+              type: integer
+              enum:
+                - 0
+                - 1
+                - 3
+                - 7
+            userId:
+              type: string
+            createdAt:
+              type: string
+              format: date-time
+            isActive:
+              type: boolean
+
+  /links/create:
+    post:
+      summary: Create a short link
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                originalUrl:
+                  type: string
+                expiresIn:
+                  type: string
+      responses:
+        '201':
+          description: Short link created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  originalUrl:
+                    type: string
+
+  /{id}:
+    get:
+      summary: Follow a short link
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '302':
+          description: Redirect to the original URL
+
+  /auth/sign-up:
+    post:
+      summary: User sign-up
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '201':
+          description: User signed up successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  email:
+                    type: string
+                  accessToken:
+                    type: string
+                  refreshToken:
+                    type: string
+
+  /auth/sign-in:
+    post:
+      summary: User sign-in
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '200':
+          description: User signed in successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  email:
+                    type: string
+                  accessToken:
+                    type: string
+                  refreshToken:
+                    type: string
+
+  /auth/refresh:
+    post:
+      summary: Refresh access and refresh tokens
+      responses:
+        '200':
+          description: Access token refreshed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  email:
+                    type: string
+                  accessToken:
+                    type: string
+                  refreshToken:
+                    type: string
+
