@@ -75,7 +75,7 @@ class NotificationService {
             },
             Source: process.env.EMAIL!,
         }
-        this.ses.sendEmail(params, (err, data) => {
+        await this.ses.sendEmail(params, (err, data) => {
             if (err){
                 console.log("SES error " + err)
             }else {
